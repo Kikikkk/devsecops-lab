@@ -1,0 +1,33 @@
+# Этап 1: установка зависимостей
+FROM python:3.13-slim-trixie AS builder
+
+ENV PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /build
+COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+# Этап 2: минимальный runtime без shell
+FROM gcr.io/distroless/python3-debian13
+
+WORKDIR /app
+
+ENV HOME=/tmp
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/install/lib/python3.13/site-packages
+
+COPY --from=builder /install /install
+COPY app.py /app/app.py
+
+USER 10001:10001
+
+EXPOSE 5000
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD ["/usr/bin/python3", "-c", "import urllib.request as u; u.urlopen('http://localhost:5000/health')"]
+
+ENTRYPOINT ["/usr/bin/python3"]
+CMD ["-m", "gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--access-logfile", "-", "app:app"]
